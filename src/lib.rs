@@ -6,8 +6,8 @@ use zkinterface_generated::zkinterface as fb;
 use std::io::Read;
 use std::fmt;
 use std::fs::File;
-use curve25519_dalek::scalar::Scalar;
 use libspartan::{InputsAssignment, Instance, SNARKGens, VarsAssignment, SNARK};
+use curve25519_dalek::scalar::Scalar;
 use merlin::Transcript;
 
 #[derive(Debug)]
@@ -67,8 +67,8 @@ impl R1cs {
   fn inputs_assignment(&self) -> InputsAssignment {
     // create an InputsAssignment (a = 1, b = 2)
     let mut inputs = vec![Scalar::zero().to_bytes(); self.inputs.len()];
-    for Variable{id:_, value} in &self.inputs {
-      inputs.push(value.clone());
+    for Variable{id, value} in &self.inputs {
+      inputs[id-1] = value.clone();
     }
     InputsAssignment::new(&inputs).unwrap()
   }
@@ -76,8 +76,8 @@ impl R1cs {
   fn vars_assignment(&self) -> VarsAssignment {
     // Var Assignments (Z_0 = 16 is the only output)
     let mut vars = vec![Scalar::zero().to_bytes(); self.witness.len()];
-    for Variable{id:_, value} in &self.witness {
-      vars.push(value.clone());
+    for Variable{id, value} in &self.witness {
+      vars[id-1] = value.clone();
     }
     VarsAssignment::new(&vars).unwrap()
   }
@@ -104,19 +104,15 @@ impl R1cs {
         }
       }
       for Variable{id,value} in c {
+        let scalar_value = Scalar::from_bytes_mod_order(*value);
         match self.witness.iter().find(|&v| v.id == *id) {
-          Some(_v) => C.push((i, *id, value.clone())),        // Witness variable
-          None => C.push((i, num_vars + id, value.clone())) // Input or constant works, because id:0 => "1"
+          Some(_v) => C.push((i, *id, scalar_value.to_bytes())),        // Witness variable
+          None => C.push((i, num_vars + id, scalar_value.to_bytes())) // Input or constant works, because id:0 => "1"
         }
       }
       i+=1;
     }
-
     Instance::new(self.constraints.len(), self.witness.len(), self.inputs.len(), &A, &B, &C).unwrap()
-  }
-
-  fn is_sat(&self, inst: &Instance, vars: &VarsAssignment, inps: &InputsAssignment) -> bool {
-    inst.is_sat(&vars, &inps).unwrap()
   }
 
   fn public_params(&self) -> SNARKGens {
@@ -278,12 +274,12 @@ fn test_spartan_manual() {
   // Create a^2 + b + 13
   A.push((0, num_vars+2, Scalar::one().to_bytes())); // 1*a
   B.push((0, num_vars+2, Scalar::one().to_bytes())); // 1*a
-  C.push((0, num_vars+1, Scalar::one().to_bytes())); // 1*z
   C.push((0, num_vars, (-Scalar::from(13u64)).to_bytes())); // -13*1
+  C.push((0, num_vars+1, Scalar::one().to_bytes())); // 1*z
   C.push((0, num_vars+3, (-Scalar::one()).to_bytes())); // -1*b
 
   // Var Assignments (Z_0 = 16 is the only output)
-  let mut vars = vec![Scalar::zero().to_bytes(); num_vars];
+  let vars = vec![Scalar::zero().to_bytes(); num_vars];
 
   // create an InputsAssignment (a = 1, b = 2)
   let mut inputs = vec![Scalar::zero().to_bytes(); num_inputs];
