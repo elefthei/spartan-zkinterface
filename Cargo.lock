@@ -160,21 +160,6 @@ dependencies = [
 
 [[package]]
 name = "curve25519-dalek"
-version = "2.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "434e1720189a637d44fe464f4df1e6eb900b4835255b14354497c78af37d9bb8"
-dependencies = [
- "byteorder",
- "digest 0.8.1",
- "packed_simd_2",
- "rand_core",
- "serde",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "curve25519-dalek"
 version = "3.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f627126b946c25a4638eec0ea634fc52506dea98db118aae985118ce7c3d723f"
@@ -581,13 +566,12 @@ checksum = "fe0f37c9e8f3c5a4a66ad655a93c74daac4ad00c441533bf5c6e7990bb42604e"
 [[package]]
 name = "spartan"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a657770a10c39fa59043cc3d11ef4fd6575fea1b63d3931969650dd8e2b7d078"
+source = "git+https://github.com/elefthei/Spartan#ba0f38259c1b5f26afa60505d9377da921a83d75"
 dependencies = [
  "bincode",
  "byteorder",
  "colored",
- "curve25519-dalek 2.1.2",
+ "curve25519-dalek",
  "digest 0.8.1",
  "flate2",
  "itertools",
@@ -598,6 +582,7 @@ dependencies = [
  "serde",
  "sha3",
  "subtle",
+ "thiserror",
  "zeroize",
 ]
 
@@ -605,7 +590,7 @@ dependencies = [
 name = "spartan-zkinterface"
 version = "0.1.0"
 dependencies = [
- "curve25519-dalek 3.0.2",
+ "curve25519-dalek",
  "flatbuffers",
  "generic-array 0.14.4",
  "im",
@@ -647,6 +632,26 @@ dependencies = [
  "quote",
  "syn",
  "unicode-xid",
+]
+
+[[package]]
+name = "thiserror"
+version = "1.0.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0f4a65597094d4483ddaed134f409b2cb7c1beccf25201a9f73c719254fa98e"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7765189610d8241a44529806d6fd1f2e0a08734313a35d5b3a556f92b381f3c0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

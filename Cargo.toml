@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 im = "15.0.0"
-spartan = "0.2.1"
+spartan = { git = "https://github.com/elefthei/Spartan" }
 curve25519-dalek = {version = "3.0.0", features = ["serde", "simd_backend"]}
 rayon = "1.3.0"
 rand = "0.7.3"
