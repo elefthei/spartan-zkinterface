@@ -46,7 +46,10 @@ fn main() {
 
     // Check if instance is satisfiable
     let res = inst.is_sat(&assignment_vars, &assignment_inputs);
-    assert_eq!(res.unwrap(), true, "should be satisfied");
+    match res {
+        Ok(res) => assert!(res, "Circuit should be satisfied by assignments"),
+        Err(e) => std::panic!(e)
+    }
 
     // Crypto proof public params
     let gens = r1cs.public_params();

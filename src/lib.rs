@@ -76,8 +76,9 @@ impl R1cs {
   pub fn vars_assignment(&self) -> VarsAssignment {
     // Var Assignments (Z_0 = 16 is the only output)
     let mut vars = vec![Scalar::zero().to_bytes(); self.witness.len()];
+    let max_inp = self.inputs.iter().map(|v| v.id).max().unwrap();
     for Variable{id, value} in &self.witness {
-      vars[id-1] = value.clone();
+      vars[id-max_inp-1] = value.clone();
     }
     VarsAssignment::new(&vars).unwrap()
   }
@@ -230,7 +231,7 @@ fn test_e2e() {
 
   // Check if instance is satisfiable
   let res = inst.is_sat(&assignment_vars, &assignment_inputs);
-  assert_eq!(res.unwrap(), true, "should be satisfied");
+  assert!(res.unwrap(), "should be satisfied");
 
   // Crypto proof public params
   let gens = r1cs.public_params();
