@@ -2,29 +2,31 @@
 pub extern crate flatbuffers;
 
 pub mod zkinterface_generated;
-use zkinterface_generated::zkinterface as fb;
-use std::io::Read;
+use curve25519_dalek::scalar::Scalar;
+use libspartan::{InputsAssignment, Instance, SNARKGens, VarsAssignment, SNARK};
+use merlin::Transcript;
+use std::cmp::max;
 use std::fmt;
 use std::fs::File;
-use libspartan::{InputsAssignment, Instance, SNARKGens, VarsAssignment, SNARK};
-use curve25519_dalek::scalar::Scalar;
-use merlin::Transcript;
+use std::io::Read;
+use zkinterface_generated::zkinterface as fb;
 
 #[derive(Debug)]
 pub struct FlatError {
-    details: String
+    details: String,
 }
 
 impl FlatError {
     fn new(msg: &str) -> FlatError {
-        FlatError{details: msg.to_string()}
+        FlatError {
+            details: msg.to_string(),
+        }
     }
-
 }
 
 impl fmt::Display for FlatError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,"{}",self.details)
+        write!(f, "{}", self.details)
     }
 }
 
@@ -34,7 +36,7 @@ impl std::error::Error for FlatError {
     }
 }
 
-pub type Result<T> = std::result::Result<T,FlatError>;
+pub type Result<T> = std::result::Result<T, FlatError>;
 
 impl From<std::io::Error> for FlatError {
     fn from(error: std::io::Error) -> Self {
@@ -46,278 +48,279 @@ impl From<std::io::Error> for FlatError {
 #[derive(Debug)]
 pub struct Variable {
     id: usize,
-    value: [u8; 32]
+    value: [u8; 32],
 }
 
 #[derive(Debug)]
 pub struct QEQ {
     a: Vec<Variable>,
     b: Vec<Variable>,
-    c: Vec<Variable>
+    c: Vec<Variable>,
 }
 #[derive(Debug)]
 pub struct R1cs {
     inputs: Vec<Variable>,
     witness: Vec<Variable>,
     field_max: [u8; 32],
-    constraints: Vec<QEQ>
-}
-
-impl R1cs {
-  pub fn inputs_assignment(&self) -> InputsAssignment {
-    // create an InputsAssignment (a = 1, b = 2)
-    let mut inputs = vec![Scalar::zero().to_bytes(); self.inputs.len()];
-    for Variable{id, value} in &self.inputs {
-      inputs[id-1] = value.clone();
-    }
-    InputsAssignment::new(&inputs).unwrap()
-  }
-
-  pub fn vars_assignment(&self) -> VarsAssignment {
-    // Var Assignments (Z_0 = 16 is the only output)
-    let mut vars = vec![Scalar::zero().to_bytes(); self.witness.len()];
-    let max_inp = self.inputs.iter().map(|v| v.id).max().unwrap();
-    for Variable{id, value} in &self.witness {
-      vars[id-max_inp-1] = value.clone();
-    }
-    VarsAssignment::new(&vars).unwrap()
-  }
-
-  pub fn instance(&self,
-    A: &mut Vec<(usize, usize, [u8; 32])>,
-    B: &mut Vec<(usize, usize, [u8; 32])>,
-    C: &mut Vec<(usize, usize, [u8; 32])>) -> Instance {
-
-    let num_vars = self.witness.len();
-    let mut i = 0;
-
-    for QEQ{a,b,c} in &self.constraints {
-      for Variable{id,value} in a {
-        match self.witness.iter().find(|&v| v.id == *id) {
-          Some(_v) => A.push((i, *id, value.clone())),        // Witness variable
-          None => A.push((i, num_vars + id, value.clone())) // Input or constant works, because id:0 => "1"
-        }
-      }
-      for Variable{id,value} in b {
-        match self.witness.iter().find(|&v| v.id == *id) {
-          Some(_v) => B.push((i, *id, value.clone())),        // Witness variable
-          None => B.push((i, num_vars + id, value.clone())) // Input or constant works, because id:0 => "1"
-        }
-      }
-      for Variable{id,value} in c {
-        let scalar_value = Scalar::from_bytes_mod_order(*value);
-        match self.witness.iter().find(|&v| v.id == *id) {
-          Some(_v) => C.push((i, *id, scalar_value.to_bytes())),        // Witness variable
-          None => C.push((i, num_vars + id, scalar_value.to_bytes())) // Input or constant works, because id:0 => "1"
-        }
-      }
-      i+=1;
-    }
-    Instance::new(self.constraints.len(), self.witness.len(), self.inputs.len(), &A, &B, &C).unwrap()
-  }
-
-  pub fn public_params(&self) -> SNARKGens {
-    SNARKGens::new(self.constraints.len(), self.witness.len(), self.inputs.len(), 3 /* TODO: compute */)
-  }
+    constraints: Vec<QEQ>,
+    non_zero_entries: usize,
 }
 
 #[derive(Debug)]
 pub struct R1csReader<'a> {
     header: fb::CircuitHeader<'a>,
     cs: fb::ConstraintSystem<'a>,
-    witness: fb::Witness<'a>
+    witness: fb::Witness<'a>,
+}
+
+impl R1cs {
+    pub fn new<'a>(r: R1csReader<'a>) -> R1cs {
+        R1cs::from(r)
+    }
+    pub fn inputs_assignment(&self) -> InputsAssignment {
+        // create an InputsAssignment (a = 1, b = 2)
+        let mut inputs = vec![Scalar::zero().to_bytes(); self.inputs.len()];
+        for Variable { id, value } in &self.inputs {
+            inputs[id - 1] = value.clone();
+        }
+        InputsAssignment::new(&inputs).unwrap()
+    }
+
+    pub fn vars_assignment(&self) -> VarsAssignment {
+        // Var Assignments (Z_0 = 16 is the only output)
+        let mut vars = vec![Scalar::zero().to_bytes(); self.witness.len()];
+        let max_inp = self.inputs.iter().map(|v| v.id).max().unwrap();
+        for Variable { id, value } in &self.witness {
+            vars[id - max_inp - 1] = value.clone();
+        }
+        VarsAssignment::new(&vars).unwrap()
+    }
+
+    // Translate from whatever naming scheme in the input to Spartan's naming Scheme z = [vars, 1, inputs]
+    fn translate(&self, id: &usize) -> usize {
+        let num_vars = self.witness.len();
+        match self.witness.iter().position(|v| v.id == *id) {
+            Some(idx) => return idx,
+            None => ()
+        }
+        match self.inputs.iter().position(|v| v.id == *id) {
+            Some(idx) => return idx + num_vars + 1,
+            None => return num_vars
+        }
+    }
+
+    pub fn instance(
+        &self,
+        A: &mut Vec<(usize, usize, [u8; 32])>,
+        B: &mut Vec<(usize, usize, [u8; 32])>,
+        C: &mut Vec<(usize, usize, [u8; 32])>,
+    ) -> Instance {
+
+        let num_vars = self.witness.len();
+        let mut i = 0;
+
+        for QEQ { a, b, c } in &self.constraints {
+            for Variable { id, value } in a {
+                A.push((i, self.translate(id), value.clone()));
+            }
+            for Variable { id, value } in b {
+                B.push((i, self.translate(id), value.clone()));
+            }
+            for Variable { id, value } in c {
+                C.push((i, self.translate(id), value.clone()));
+            }
+            i += 1;
+        }
+        Instance::new(
+            self.constraints.len(),
+            self.witness.len(),
+            self.inputs.len(),
+            &A,
+            &B,
+            &C,
+        )
+        .unwrap()
+    }
+
+    pub fn public_params(&self) -> SNARKGens {
+        SNARKGens::new(
+            self.constraints.len(),
+            self.witness.len(),
+            self.inputs.len(),
+            self.non_zero_entries,
+        )
+    }
 }
 
 impl<'a> R1csReader<'a> {
-  pub fn new(
-    circuit_header_buffer: &'a mut Vec<u8>,
-    constraints_buffer: &'a mut Vec<u8>,
-    witness_buffer: &'a mut Vec<u8>) -> Self {
+    pub fn new(
+        circuit_header_buffer: &'a mut Vec<u8>,
+        constraints_buffer: &'a mut Vec<u8>,
+        witness_buffer: &'a mut Vec<u8>,
+    ) -> Self {
+        // Read circuit header, includes inputs
+        let header = fb::get_root_as_root(circuit_header_buffer)
+            .message_as_circuit_header()
+            .ok_or(FlatError::new(
+                "Input file is not a flatbuffer Circuit Header",
+            ))
+            .unwrap();
 
-    // Read circuit header, includes inputs
-    let header =
-      fb::get_root_as_root(circuit_header_buffer)
-        .message_as_circuit_header()
-        .ok_or(FlatError::new("Input file is not a flatbuffer Circuit Header"))
-        .unwrap();
+        // Read constraint system
+        let cs = fb::get_root_as_root(constraints_buffer)
+            .message_as_constraint_system()
+            .ok_or(FlatError::new(
+                "Input file is not a flatbuffer Constraint System",
+            ))
+            .unwrap();
 
-    // Read constraint system
-    let cs =
-      fb::get_root_as_root(constraints_buffer)
-        .message_as_constraint_system()
-        .ok_or(FlatError::new("Input file is not a flatbuffer Constraint System"))
-        .unwrap();
+        // Read witnesses
+        let witness = fb::get_root_as_root(witness_buffer)
+            .message_as_witness()
+            .ok_or(FlatError::new("Input file is not a flatbuffer Witness"))
+            .unwrap()
+            .clone();
 
-    // Read witnesses
-    let witness =
-      fb::get_root_as_root(witness_buffer)
-        .message_as_witness()
-        .ok_or(FlatError::new("Input file is not a flatbuffer Witness"))
-        .unwrap().clone();
-
-    R1csReader{header,cs,witness}
-  }
+        R1csReader {
+            header,
+            cs,
+            witness,
+        }
+    }
 }
 
 impl<'a> From<R1csReader<'a>> for R1cs {
-  fn from(reader: R1csReader<'a>) -> R1cs {
-    // Helper to make [(k,v)] into Rust [(k',v')]
-    fn get_variables<'a>(fbvs: fb::Variables<'a>) -> Vec<Variable> {
-        let var_ids = fbvs.variable_ids().unwrap();
-        let values = fbvs.values().unwrap();
+    fn from(reader: R1csReader<'a>) -> R1cs {
+        // Helper to make [(k,v)] into Rust [(k',v')]
+        fn get_variables<'a>(fbvs: fb::Variables<'a>) -> Vec<Variable> {
+            let var_ids = fbvs.variable_ids().unwrap();
+            let values = fbvs.values().unwrap();
 
-        let num_vars = var_ids.len();
+            let num_vars = var_ids.len();
 
-        // To return
-        let mut vs = Vec::new();
+            // To return
+            let mut vs = Vec::new();
 
-        if num_vars == 0 {
-            return Vec::new();
+            if num_vars == 0 {
+                return Vec::new();
+            }
+            let ba_len = values.len() / num_vars;
+
+            for i in 0..num_vars {
+                let mut val = [0; 32];
+                val[..ba_len].clone_from_slice(&values[i * ba_len..(i + 1) * ba_len]);
+                let v = Variable {
+                    id: var_ids.get(i) as usize,
+                    value: val,
+                };
+                vs.push(v);
+            }
+            vs
         }
-        let ba_len = values.len() / num_vars;
 
-        for i in 0..num_vars {
-            let mut val = [0; 32];
-            val[..ba_len].clone_from_slice(&values[i*ba_len..(i+1)*ba_len]);
-            let v = Variable { id: var_ids.get(i) as usize, value: val };
-            vs.push(v);
+        let inputs = get_variables(reader.header.instance_variables().unwrap());
+        let mut field_max = [0u8; 32];
+        field_max.clone_from_slice(reader.header.field_maximum().unwrap());
+
+        let witness = get_variables(reader.witness.assigned_variables().unwrap());
+
+        let mut constraints = Vec::new();
+
+        let mut num_non_zero_a = 0;
+        let mut num_non_zero_b = 0;
+        let mut num_non_zero_c = 0;
+
+        for ctr in reader.cs.constraints().unwrap() {
+            let a = get_variables(ctr.linear_combination_a().unwrap());
+            let b = get_variables(ctr.linear_combination_b().unwrap());
+            let c = get_variables(ctr.linear_combination_c().unwrap());
+
+            num_non_zero_a += a.iter().filter(|&v| v.value.iter().any(|&x| x != 0)).count();
+            num_non_zero_b += b.iter().filter(|&v| v.value.iter().any(|&x| x != 0)).count();
+            num_non_zero_c += c.iter().filter(|&v| v.value.iter().any(|&x| x != 0)).count();
+
+            constraints.push(QEQ { a, b, c });
         }
-        vs
+
+        let non_zero_entries = max(num_non_zero_a, max(num_non_zero_b, num_non_zero_c));
+        R1cs {
+            inputs,
+            witness,
+            field_max,
+            constraints,
+            non_zero_entries
+        }
     }
+}
 
-    let inputs = get_variables(reader.header.instance_variables().unwrap());
-    let mut field_max = [0u8; 32];
-    field_max.clone_from_slice(reader.header.field_maximum().unwrap());
+// TESTS
+fn run_e2e(circuit: &str, header: &str, witness: &str) {
+    // Read files into buffers
+    let mut fh = File::open(header).unwrap();
+    let mut bufh = Vec::new();
+    fh.read_to_end(&mut bufh).unwrap();
+    let mut fcs = File::open(circuit).unwrap();
+    let mut bufcs = Vec::new();
+    fcs.read_to_end(&mut bufcs).unwrap();
+    let mut fw = File::open(witness).unwrap();
+    let mut bufw = Vec::new();
+    fw.read_to_end(&mut bufw).unwrap();
 
-    let witness = get_variables(reader.witness.assigned_variables().unwrap());
+    // Initialize R1csReader
+    let reader = R1csReader::new(&mut bufh, &mut bufcs, &mut bufw);
+    let r1cs = R1cs::from(reader);
 
-    let mut constraints = Vec::new();
-    for ctr in reader.cs.constraints().unwrap() {
-      let a = get_variables(ctr.linear_combination_a().unwrap());
-      let b = get_variables(ctr.linear_combination_b().unwrap());
-      let c = get_variables(ctr.linear_combination_c().unwrap());
-      constraints.push(QEQ{a,b,c});
-    }
-    R1cs{inputs,witness,field_max,constraints}
-  }
+    // We will encode the above constraints into three matrices, where
+    // the coefficients in the matrix are in the little-endian byte order
+    let mut A: Vec<(usize, usize, [u8; 32])> = Vec::new();
+    let mut B: Vec<(usize, usize, [u8; 32])> = Vec::new();
+    let mut C: Vec<(usize, usize, [u8; 32])> = Vec::new();
+
+    let inst = r1cs.instance(&mut A, &mut B, &mut C);
+    let assignment_inputs = r1cs.inputs_assignment();
+    let assignment_vars = r1cs.vars_assignment();
+
+    // Check if instance is satisfiable
+    let res = inst.is_sat(&assignment_vars, &assignment_inputs);
+    assert!(res.unwrap(), "should be satisfied");
+
+    // Crypto proof public params
+    let gens = r1cs.public_params();
+
+    // create a commitment to the R1CS instance
+    let (comm, decomm) = SNARK::encode(&inst, &gens);
+
+    // produce a proof of satisfiability
+    let mut prover_transcript = Transcript::new(b"snark_example");
+    let proof = SNARK::prove(
+        &inst,
+        &decomm,
+        assignment_vars,
+        &assignment_inputs,
+        &gens,
+        &mut prover_transcript,
+    );
+
+    // verify the proof of satisfiability
+    let mut verifier_transcript = Transcript::new(b"snark_example");
+    assert!(proof
+        .verify(&comm, &assignment_inputs, &mut verifier_transcript, &gens)
+        .is_ok());
+    println!("proof verification successful!");
 }
 
 #[test]
-fn test_e2e() {
-  // Read files into buffers
-  let mut fh = File::open("foo.inp.zkif").unwrap();
-  let mut bufh = Vec::new();
-  fh.read_to_end(&mut bufh).unwrap();
-  let mut fcs = File::open("foo.zkif").unwrap();
-  let mut bufcs = Vec::new();
-  fcs.read_to_end(&mut bufcs).unwrap();
-  let mut fw = File::open("foo.wit.zkif").unwrap();
-  let mut bufw = Vec::new();
-  fw.read_to_end(&mut bufw).unwrap();
+fn test_e2e_foo() {
+    run_e2e("test/foo.zkif", "test/foo.inp.zkif", "test/foo.wit.zkif");
+}
 
-  // Initialize R1csReader
-  let reader = R1csReader::new(&mut bufh, &mut bufcs, &mut bufw);
-  let r1cs = R1cs::from(reader);
 
-  // We will encode the above constraints into three matrices, where
-  // the coefficients in the matrix are in the little-endian byte order
-  let mut A: Vec<(usize, usize, [u8; 32])> = Vec::new();
-  let mut B: Vec<(usize, usize, [u8; 32])> = Vec::new();
-  let mut C: Vec<(usize, usize, [u8; 32])> = Vec::new();
-
-  let inst = r1cs.instance(&mut A, &mut B, &mut C);
-  let assignment_inputs = r1cs.inputs_assignment();
-  let assignment_vars = r1cs.vars_assignment();
-
-  // Check if instance is satisfiable
-  let res = inst.is_sat(&assignment_vars, &assignment_inputs);
-  assert!(res.unwrap(), "should be satisfied");
-
-  // Crypto proof public params
-  let gens = r1cs.public_params();
-
-  // create a commitment to the R1CS instance
-  let (comm, decomm) = SNARK::encode(&inst, &gens);
-
-  // produce a proof of satisfiability
-  let mut prover_transcript = Transcript::new(b"snark_example");
-  let proof = SNARK::prove(
-    &inst,
-    &decomm,
-    assignment_vars,
-    &assignment_inputs,
-    &gens,
-    &mut prover_transcript,
-  );
-
-  // verify the proof of satisfiability
-  let mut verifier_transcript = Transcript::new(b"snark_example");
-  assert!(proof
-    .verify(&comm, &assignment_inputs, &mut verifier_transcript, &gens)
-    .is_ok());
-  println!("proof verification successful!");
+#[test]
+fn test_e2e_add() {
+    run_e2e("test/add.zkif", "test/add.inp.zkif", "test/add.wit.zkif");
 }
 
 #[test]
-fn test_spartan_manual() {
-  // parameters of the R1CS instance
-  let num_cons = 1;
-  let num_vars = 0;
-  let num_inputs = 3;
-  let num_non_zero_entries = 3;
-
-  // We will encode the above constraints into three matrices, where
-  // the coefficients in the matrix are in the little-endian byte order
-  let mut A: Vec<(usize, usize, [u8; 32])> = Vec::new();
-  let mut B: Vec<(usize, usize, [u8; 32])> = Vec::new();
-  let mut C: Vec<(usize, usize, [u8; 32])> = Vec::new();
-
-  // Create a^2 + b + 13
-  A.push((0, num_vars+2, Scalar::one().to_bytes())); // 1*a
-  B.push((0, num_vars+2, Scalar::one().to_bytes())); // 1*a
-  C.push((0, num_vars, (-Scalar::from(13u64)).to_bytes())); // -13*1
-  C.push((0, num_vars+1, Scalar::one().to_bytes())); // 1*z
-  C.push((0, num_vars+3, (-Scalar::one()).to_bytes())); // -1*b
-
-  // Var Assignments (Z_0 = 16 is the only output)
-  let vars = vec![Scalar::zero().to_bytes(); num_vars];
-
-  // create an InputsAssignment (a = 1, b = 2)
-  let mut inputs = vec![Scalar::zero().to_bytes(); num_inputs];
-  inputs[0] = Scalar::from(16u64).to_bytes();
-  inputs[1] = Scalar::from(1u64).to_bytes();
-  inputs[2] = Scalar::from(2u64).to_bytes();
-
-  // Now compute proof
-  let assignment_inputs = InputsAssignment::new(&inputs).unwrap();
-  let assignment_vars = VarsAssignment::new(&vars).unwrap();
-
-  // Check if instance is satisfiable
-  let inst = Instance::new(num_cons, num_vars, num_inputs, &A, &B, &C).unwrap();
-  let res = inst.is_sat(&assignment_vars, &assignment_inputs);
-  assert_eq!(res.unwrap(), true, "should be satisfied");
-
-  // Crypto proof public params
-  let gens = SNARKGens::new(num_cons, num_vars, num_inputs, num_non_zero_entries);
-
-  // create a commitment to the R1CS instance
-  let (comm, decomm) = SNARK::encode(&inst, &gens);
-
-  // produce a proof of satisfiability
-  let mut prover_transcript = Transcript::new(b"snark_example");
-  let proof = SNARK::prove(
-    &inst,
-    &decomm,
-    assignment_vars,
-    &assignment_inputs,
-    &gens,
-    &mut prover_transcript,
-  );
-
-  // verify the proof of satisfiability
-  let mut verifier_transcript = Transcript::new(b"snark_example");
-  assert!(proof
-    .verify(&comm, &assignment_inputs, &mut verifier_transcript, &gens)
-    .is_ok());
-  println!("proof verification successful!");
+fn test_e2e_quad() {
+    run_e2e("test/quad.zkif", "test/quad.inp.zkif", "test/quad.wit.zkif");
 }

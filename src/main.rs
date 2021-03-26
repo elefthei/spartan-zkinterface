@@ -1,10 +1,8 @@
 mod lib;
-use curve25519_dalek::scalar::Scalar;
 use lib::*;
-use libspartan::{InputsAssignment, Instance, SNARKGens, VarsAssignment, SNARK};
 use merlin::Transcript;
+use libspartan::{SNARKGens, SNARK};
 use std::env;
-use std::fmt;
 use std::format;
 use std::fs::File;
 use std::io::Read;
