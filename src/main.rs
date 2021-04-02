@@ -7,6 +7,8 @@ use std::format;
 use std::fs::File;
 use std::io::Read;
 use std::string::String;
+use serde::ser::Serialize;
+use serde_json::Result;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -67,8 +69,10 @@ fn main() {
     );
 
     match args.get(1).unwrap().as_str() {
-        "prove" =>
-            println!("Proof:\n{:?}", proof),
+        "prove" => {
+            let json = serde_json::to_string_pretty(&proof).unwrap();
+            println!("{}", json)
+        },
         "verify" => {
             let mut verifier_transcript = Transcript::new(b"snark_example");
             assert!(proof

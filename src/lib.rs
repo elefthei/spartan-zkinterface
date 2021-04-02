@@ -2,7 +2,6 @@
 pub extern crate flatbuffers;
 
 pub mod zkinterface_generated;
-use curve25519_dalek::scalar::Scalar;
 use libspartan::{InputsAssignment, Instance, SNARKGens, VarsAssignment, SNARK};
 use merlin::Transcript;
 use std::cmp::max;
@@ -78,20 +77,17 @@ impl R1cs {
         R1cs::from(r)
     }
     pub fn inputs_assignment(&self) -> InputsAssignment {
-        // create an InputsAssignment (a = 1, b = 2)
-        let mut inputs = vec![Scalar::zero().to_bytes(); self.inputs.len()];
+        let mut inputs = Vec::new();
         for Variable { id, value } in &self.inputs {
-            inputs[id - 1] = value.clone();
+            inputs.push(value.clone());
         }
         InputsAssignment::new(&inputs).unwrap()
     }
 
     pub fn vars_assignment(&self) -> VarsAssignment {
-        // Var Assignments (Z_0 = 16 is the only output)
-        let mut vars = vec![Scalar::zero().to_bytes(); self.witness.len()];
-        let max_inp = self.inputs.iter().map(|v| v.id).max().unwrap();
+        let mut vars = Vec::new();
         for Variable { id, value } in &self.witness {
-            vars[id - max_inp - 1] = value.clone();
+            vars.push(value.clone());
         }
         VarsAssignment::new(&vars).unwrap()
     }
@@ -101,11 +97,10 @@ impl R1cs {
         let num_vars = self.witness.len();
         match self.witness.iter().position(|v| v.id == *id) {
             Some(idx) => return idx,
-            None => ()
-        }
-        match self.inputs.iter().position(|v| v.id == *id) {
-            Some(idx) => return idx + num_vars + 1,
-            None => return num_vars
+            None => match self.inputs.iter().position(|v| v.id == *id) {
+                Some(idx) => return idx + num_vars + 1,
+                None => return num_vars
+            }
         }
     }
 
@@ -115,7 +110,6 @@ impl R1cs {
         B: &mut Vec<(usize, usize, [u8; 32])>,
         C: &mut Vec<(usize, usize, [u8; 32])>,
     ) -> Instance {
-
         let num_vars = self.witness.len();
         let mut i = 0;
 
@@ -230,6 +224,10 @@ impl<'a> From<R1csReader<'a>> for R1cs {
         let mut num_non_zero_b = 0;
         let mut num_non_zero_c = 0;
 
+        if reader.cs.constraints().unwrap().len() == 0 {
+            panic!("No constraints given!");
+        }
+
         for ctr in reader.cs.constraints().unwrap() {
             let a = get_variables(ctr.linear_combination_a().unwrap());
             let b = get_variables(ctr.linear_combination_b().unwrap());
@@ -238,11 +236,11 @@ impl<'a> From<R1csReader<'a>> for R1cs {
             num_non_zero_a += a.iter().filter(|&v| v.value.iter().any(|&x| x != 0)).count();
             num_non_zero_b += b.iter().filter(|&v| v.value.iter().any(|&x| x != 0)).count();
             num_non_zero_c += c.iter().filter(|&v| v.value.iter().any(|&x| x != 0)).count();
-
             constraints.push(QEQ { a, b, c });
         }
 
         let non_zero_entries = max(num_non_zero_a, max(num_non_zero_b, num_non_zero_c));
+
         R1cs {
             inputs,
             witness,
@@ -321,6 +319,6 @@ fn test_e2e_add() {
 }
 
 #[test]
-fn test_e2e_quad() {
-    run_e2e("test/quad.zkif", "test/quad.inp.zkif", "test/quad.wit.zkif");
+fn test_e2e_inv() {
+    run_e2e("test/inv.zkif", "test/inv.inp.zkif", "test/inv.wit.zkif");
 }
