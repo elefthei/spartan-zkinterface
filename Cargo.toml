@@ -16,7 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 im = "15.0.0"
-spartan = { path = "/home/elefthei/git/spartan" }
+spartan = { git = "https://github.com/elefthei/spartan" }
 curve25519-dalek = {version = "3.0.0", features = ["serde", "simd_backend"]}
 rand = "0.7.3"
 merlin = "2.0.0"
