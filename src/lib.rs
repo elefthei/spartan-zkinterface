@@ -1,8 +1,8 @@
-#![allow(non_snake_case)]
+#![allow(warnings)]
 pub extern crate flatbuffers;
 
 pub mod zkinterface_generated;
-use libspartan::{InputsAssignment, Instance, SNARKGens, VarsAssignment, SNARK};
+use libspartan::{InputsAssignment, Instance, SNARKGens, VarsAssignment, SNARK, NIZKGens, NIZK};
 use merlin::Transcript;
 use std::cmp::max;
 use std::fmt;
@@ -136,12 +136,20 @@ impl R1cs {
         .unwrap()
     }
 
-    pub fn public_params(&self) -> SNARKGens {
+    pub fn snark_public_params(&self) -> SNARKGens {
         SNARKGens::new(
             self.constraints.len(),
             self.witness.len(),
             self.inputs.len(),
             self.non_zero_entries,
+        )
+    }
+
+    pub fn nizk_public_params(&self) -> NIZKGens {
+        NIZKGens::new(
+            self.constraints.len(),
+            self.witness.len(),
+            self.inputs.len()
         )
     }
 }
@@ -283,7 +291,7 @@ fn run_e2e(circuit: &str, header: &str, witness: &str) {
     assert!(res.unwrap(), "should be satisfied");
 
     // Crypto proof public params
-    let gens = r1cs.public_params();
+    let gens = r1cs.snark_public_params();
 
     // create a commitment to the R1CS instance
     let (comm, decomm) = SNARK::encode(&inst, &gens);
