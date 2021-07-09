@@ -86,7 +86,7 @@ fn main() {
             &gens,
             &mut prover_transcript,
         );
-
+        eprintln!("Circuit: {}", circuitfn);
         eprintln!("Prover: {}ms", prover.elapsed().as_millis());
         let verifier = Instant::now();
         match args.get(1).unwrap().as_str() {
@@ -121,7 +121,7 @@ fn main() {
             &gens,
             &mut prover_transcript,
         );
-
+        eprintln!("Circuit: {}", circuitfn);
         eprintln!("Prover: {}ms", prover.elapsed().as_millis());
         let verifier = Instant::now();
         match args.get(1).unwrap().as_str() {
