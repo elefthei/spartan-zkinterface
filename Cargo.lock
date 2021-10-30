@@ -27,11 +27,10 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
 name = "bincode"
-version = "1.3.2"
+version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d175dfa69e619905c4c3cdb7c3c203fa3bdd5d51184e3afdb2742c0280493772"
+checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
 dependencies = [
- "byteorder",
  "serde",
 ]
 
@@ -563,7 +562,6 @@ checksum = "fe0f37c9e8f3c5a4a66ad655a93c74daac4ad00c441533bf5c6e7990bb42604e"
 [[package]]
 name = "spartan"
 version = "0.3.0"
-source = "git+https://github.com/microsoft/Spartan.git?branch=multicore#a05d0f42f313a4e294913b69356d29bd45e848b5"
 dependencies = [
  "bincode",
  "byteorder",
@@ -587,6 +585,7 @@ dependencies = [
 name = "spartan-zkinterface"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "curve25519-dalek",
  "flatbuffers",
  "generic-array 0.14.4",

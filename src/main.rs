@@ -11,6 +11,7 @@ use std::string::String;
 use serde::ser::Serialize;
 use serde_json::Result;
 use std::time::{Duration, Instant};
+use bincode;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -63,9 +64,7 @@ fn main() {
     let res = inst.is_sat(&assignment_vars, &assignment_inputs);
     match res {
         Ok(res) =>
-            if res {
-                eprintln!("Constraints are satisfied by inputs");
-            } else {
+            if !res {
                 std::panic!("Circuit should be satisfied by assignments");
             }
         Err(e) => std::panic!(e)
@@ -86,13 +85,15 @@ fn main() {
             &gens,
             &mut prover_transcript,
         );
-        eprintln!("Circuit: {}", circuitfn);
-        eprintln!("Prover: {}ms", prover.elapsed().as_millis());
+        let prover_ms = prover.elapsed().as_millis();
+        let innerproof = &proof.r1cs_sat_proof;
+        let proof_len = bincode::serialize(innerproof).unwrap().len();
+        let comm_len = bincode::serialize(&innerproof.comm_vars).unwrap().len();
+
         let verifier = Instant::now();
         match args.get(1).unwrap().as_str() {
             "prove" => {
                 let json = serde_json::to_string_pretty(&proof).unwrap();
-                eprintln!("Prover: {}ms", prover.elapsed().as_millis());
                 println!("{}", json)
             },
             "verify" => {
@@ -100,8 +101,8 @@ fn main() {
                 assert!(proof
                     .verify(&inst, &assignment_inputs, &mut verifier_transcript, &gens)
                     .is_ok());
-                eprintln!("Verifier: {}ms", verifier.elapsed().as_millis());
-                eprintln!("NIZK proof verification successful");
+                let verifier_ms = verifier.elapsed().as_millis();
+                eprintln!("{}, {}, {}, {}, {}", circuitfn, prover_ms, verifier_ms, comm_len, proof_len);
             }
             _ => eprintln!("{}", usage),
         }
