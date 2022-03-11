@@ -16,15 +16,10 @@ path = "src/main.rs"
 
 [dependencies]
 im = "15.0.0"
-spartan = { path = "/home/elefthei/git/Spartan" }
-bincode = "1.3.3"
-curve25519-dalek = {version = "3.0.0", features = ["serde", "simd_backend"]}
-rand = "0.7.3"
+spartan = { path = "../Spartan" }
+bincode = "1.2.1"
 merlin = "3.0.0"
-rand_core = { version = "0.5", default-features = false }
 zeroize = { version = "1", default-features = false }
 generic-array = "0.14.4"
 flatbuffers = "0.7.0"
-serde = { version = "1.0.124", features = ["derive"] }
-serde_json = "1.0.59"
 

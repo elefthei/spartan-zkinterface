@@ -8,8 +8,6 @@ use std::format;
 use std::fs::File;
 use std::io::Read;
 use std::string::String;
-use serde::ser::Serialize;
-use serde_json::Result;
 use std::time::{Duration, Instant};
 use bincode;
 
@@ -93,8 +91,7 @@ fn main() {
         let verifier = Instant::now();
         match args.get(1).unwrap().as_str() {
             "prove" => {
-                let json = serde_json::to_string_pretty(&proof).unwrap();
-                println!("{}", json)
+                eprintln!("Proof length (KB): {}", proof_len as f32 / 1000.0);
             },
             "verify" => {
                 let mut verifier_transcript = Transcript::new(b"nizk_example");
@@ -102,7 +99,10 @@ fn main() {
                     .verify(&inst, &assignment_inputs, &mut verifier_transcript, &gens)
                     .is_ok());
                 let verifier_ms = verifier.elapsed().as_millis();
-                eprintln!("{}, {}, {}, {}, {}", circuitfn, prover_ms, verifier_ms, comm_len, proof_len);
+                eprintln!("Test: {}", circuitfn);
+                eprintln!("Prover runtime (ms): {}", prover_ms);
+                eprintln!("Verifier runtime (ms): {}", verifier_ms);
+                eprintln!("Proof length (KB): {}", proof_len as f32 / 1000.0);
             }
             _ => eprintln!("{}", usage),
         }
@@ -127,9 +127,7 @@ fn main() {
         let verifier = Instant::now();
         match args.get(1).unwrap().as_str() {
             "prove" => {
-                let json = serde_json::to_string_pretty(&proof).unwrap();
                 eprintln!("Prover: {}ms", prover.elapsed().as_millis());
-                println!("{}", json)
             },
             "verify" => {
                 let mut verifier_transcript = Transcript::new(b"snark_example");
